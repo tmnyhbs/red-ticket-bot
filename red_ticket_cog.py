@@ -6,8 +6,8 @@ Flow
 1. /redticket attachment:<file>   -- attachment is picked natively by
    Discord's slash-command UI, no extra step needed for that part.
 2. Submitting the command immediately opens a modal with the remaining
-   fields: Location, Item, Days to Limbo, Owner (user picker), and
-   Additional Text.
+   fields: Location, Item, Days to Limbo, Owner (optional user picker),
+   and Additional Text.
 3. On submit, two embeds are built from the same field data and posted:
      - Red Tickets (public)   -- the form fields, no submitter identity.
      - Red Ticket Log (private) -- the same fields, plus who submitted
@@ -57,15 +57,22 @@ class RedTicketModal(discord.ui.Modal, title="Red Ticket Details"):
             max_length=1000,
         )
         self.owner_select = discord.ui.UserSelect(
+            min_values=0,
             max_values=1,
-            placeholder="Select the owner",
-            required=False
+            required=False,
+            placeholder="Select the owner (optional)",
         )
 
         self.add_item(discord.ui.Label(text="Location", component=self.location_input))
         self.add_item(discord.ui.Label(text="Item", component=self.item_input))
         self.add_item(discord.ui.Label(text="Days to Limbo", component=self.days_input))
-        self.add_item(discord.ui.Label(text="Owner", component=self.owner_select))
+        self.add_item(
+            discord.ui.Label(
+                text="Owner",
+                description="Optional",
+                component=self.owner_select,
+            )
+        )
         self.add_item(
             discord.ui.Label(
                 text="Additional Text",
@@ -83,6 +90,7 @@ class RedTicketModal(discord.ui.Modal, title="Red Ticket Details"):
             )
             return
 
+        # Owner is optional: .values is an empty list when nothing is picked.
         owner = self.owner_select.values[0] if self.owner_select.values else None
         location = self.location_input.value.strip()
         item = self.item_input.value.strip()
@@ -105,12 +113,17 @@ class RedTicketModal(discord.ui.Modal, title="Red Ticket Details"):
             embed.add_field(name="Location", value=location, inline=True)
             embed.add_field(name="Item", value=item, inline=True)
             embed.add_field(name="Days to Limbo", value=days_raw, inline=True)
-            if owner is not None:
-                embed.add_field(name="Owner", value=owner.mention, inline=True)
+            embed.add_field(
+                name="Owner",
+                value=owner.mention if owner else "Unassigned",
+                inline=True,
+            )
             if additional:
                 embed.add_field(name="Additional Text", value=additional, inline=False)
             embed.set_image(url=f"attachment://{filename}")
             return embed
+
+        allowed_mentions = discord.AllowedMentions(users=[owner] if owner else False)
 
         public_embed = build_embed()
         public_file = await self.attachment.to_file()
@@ -119,7 +132,7 @@ class RedTicketModal(discord.ui.Modal, title="Red Ticket Details"):
         await public_channel.send(
             embed=public_embed,
             file=public_file,
-            allowed_mentions=mentions,
+            allowed_mentions=allowed_mentions,
         )
 
         log_embed = build_embed()
@@ -129,7 +142,7 @@ class RedTicketModal(discord.ui.Modal, title="Red Ticket Details"):
         await log_channel.send(
             embed=log_embed,
             file=log_file,
-            allowed_mentions=mentions,
+            allowed_mentions=allowed_mentions,
         )
 
         await interaction.followup.send("Red ticket submitted.", ephemeral=True)
